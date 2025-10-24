@@ -14,8 +14,8 @@ const BackgroundRemover: React.FC<BackgroundRemoverProps> = ({
 }) => {
   // ===== CAMERA CONFIGURATION VARIABLES =====
   // Distance settings (in meters)
-  const MIN_DISTANCE = 1.5;  // Minimum distance to allow capture
-  const MAX_DISTANCE = 2.0;  // Maximum distance to allow capture
+  const MIN_DISTANCE = 2.5;  // Minimum distance to allow capture
+  const MAX_DISTANCE = 3.0;  // Maximum distance to allow capture
   
   // Canvas size settings - calculated to match background aspect ratio (2953×2362)
   // Background aspect ratio: 2953/2362 ≈ 1.25 (width/height)
