@@ -79,61 +79,72 @@ const BackgroundRemover: React.FC<BackgroundRemoverProps> = ({
   useEffect(() => { isCapturingRef.current = isCapturing; }, [isCapturing]);
   useEffect(() => { readyToCaptureRef.current = readyToCapture; }, [readyToCapture]);
 
-  // Motion detection function
+  // ===== MOTION DETECTION - PHÁT HIỆN CHUYỂN ĐỘNG =====
+  // Chức năng: So sánh 2 frame liên tiếp để phát hiện chuyển động
+  // Nguyên lý: Tính toán sự khác biệt màu sắc giữa các pixel
+  // Kết quả: true = có chuyển động, false = đứng yên
   const detectMotion = useCallback((currentFrame: ImageData, previousFrame: ImageData | null) => {
-    if (!previousFrame) return false;
+    if (!previousFrame) return false; // Frame đầu tiên, giả sử không có chuyển động
 
-    const currentData = currentFrame.data;
-    const previousData = previousFrame.data;
+    const currentData = currentFrame.data;   // Dữ liệu frame hiện tại
+    const previousData = previousFrame.data; // Dữ liệu frame trước đó
     
-    if (currentData.length !== previousData.length) return true;
+    if (currentData.length !== previousData.length) return true; // Kích thước khác nhau = có chuyển động
 
-    let differentPixels = 0;
-    const totalPixels = currentData.length / 4;
+    let differentPixels = 0; // Số pixel thay đổi
+    const totalPixels = currentData.length / 4; // Tổng số pixel (mỗi pixel có 4 giá trị RGBA)
 
+    // So sánh từng pixel giữa 2 frame
     for (let i = 0; i < currentData.length; i += 4) {
-      const rDiff = Math.abs(currentData[i] - previousData[i]);
-      const gDiff = Math.abs(currentData[i + 1] - previousData[i + 1]);
-      const bDiff = Math.abs(currentData[i + 2] - previousData[i + 2]);
+      const rDiff = Math.abs(currentData[i] - previousData[i]);     // Khác biệt Red
+      const gDiff = Math.abs(currentData[i + 1] - previousData[i + 1]); // Khác biệt Green
+      const bDiff = Math.abs(currentData[i + 2] - previousData[i + 2]); // Khác biệt Blue
       
-      // If any color channel differs by more than 30, consider it motion
+      // Nếu bất kỳ kênh màu nào khác biệt > 30, coi là có chuyển động
       if (rDiff > 30 || gDiff > 30 || bDiff > 30) {
         differentPixels++;
       }
     }
 
-    const motionRatio = differentPixels / totalPixels;
-    return motionRatio > motionThreshold;
+    const motionRatio = differentPixels / totalPixels; // Tỷ lệ pixel thay đổi
+    return motionRatio > motionThreshold; // Nếu > ngưỡng = có chuyển động
   }, [motionThreshold]);
 
-  // Handle stillness detection
+  // ===== STILLNESS DETECTION - PHÁT HIỆN ĐỨNG YÊN 2 GIÂY =====
+  // Chức năng: Phát hiện khi người dùng đứng yên 2 giây để tự động chụp ảnh
+  // Nguyên lý: Đếm thời gian không có chuyển động liên tục
+  // Kết quả: Sau 2 giây đứng yên → Tự động countdown và chụp ảnh
   const handleStillnessDetection = useCallback((hasMotion: boolean) => {
     const now = Date.now();
     
     if (hasMotion) {
-      // Motion detected, reset stillness
+      // ===== CÓ CHUYỂN ĐỘNG =====
+      // Reset tất cả timer và progress
       if (stillnessTimeoutRef.current) {
         clearTimeout(stillnessTimeoutRef.current);
         stillnessTimeoutRef.current = null;
       }
-      setIsStill(false);
-      setStillnessProgress(0);
-      stillnessStartTimeRef.current = 0;
+      setIsStill(false); // Không còn đứng yên
+      setStillnessProgress(0); // Reset progress bar về 0
+      stillnessStartTimeRef.current = 0; // Reset thời gian bắt đầu
     } else {
-      // No motion detected
+      // ===== KHÔNG CÓ CHUYỂN ĐỘNG =====
       if (stillnessStartTimeRef.current === 0) {
+        // Bắt đầu đếm thời gian đứng yên
         stillnessStartTimeRef.current = now;
       }
       
+      // Tính toán tiến độ đứng yên (0-100%)
       const stillnessDuration = now - stillnessStartTimeRef.current;
-            const progress = Math.min(stillnessDuration / STILLNESS_DURATION, 1);
-      
+      const progress = Math.min(stillnessDuration / STILLNESS_DURATION, 1); // STILLNESS_DURATION = 2000ms
       setStillnessProgress(progress);
       
+      // Kiểm tra đã đứng yên đủ 2 giây chưa
       if (progress >= 1 && !isStill && !isCapturingRef.current && !readyToCaptureRef.current && !cooldownActiveRef.current) {
-        setIsStill(true);
+        // ===== ĐÃ ĐỨNG YÊN 2 GIÂY =====
+        setIsStill(true); // Đánh dấu đang đứng yên
         console.log('🎯 Person is still for 2 seconds! Starting countdown...');
-        startCountdown(true);
+        startCountdown(true); // Bắt đầu countdown auto capture
       }
     }
   }, [isStill]);
@@ -350,24 +361,25 @@ const BackgroundRemover: React.FC<BackgroundRemoverProps> = ({
         const inRange = smoothedDistance <= MAX_DISTANCE && smoothedDistance >= MIN_DISTANCE;
         setIsInRange(inRange);
 
-        // Motion detection for stillness
-        if (inRange) {
-          // Get current frame data for motion detection
-          const currentFrameData = ctx.getImageData(0, 0, targetWidth, targetHeight);
-          const hasMotion = detectMotion(currentFrameData, previousFrameRef.current);
-          
-          // Update previous frame
-          previousFrameRef.current = currentFrameData;
-          
-          // Handle stillness detection
-          handleStillnessDetection(hasMotion);
-        } else {
-          // Not in range, reset stillness detection
-          setIsStill(false);
-          setStillnessProgress(0);
-          stillnessStartTimeRef.current = 0;
-          previousFrameRef.current = null;
-        }
+        // ===== TẮT CHỨC NĂNG ĐỨNG YÊN 2 GIÂY TỰ ĐỘNG CHỤP =====
+        // Motion detection for stillness - ĐÃ TẮT
+        // if (inRange) {
+        //   // Get current frame data for motion detection
+        //   const currentFrameData = ctx.getImageData(0, 0, targetWidth, targetHeight);
+        //   const hasMotion = detectMotion(currentFrameData, previousFrameRef.current);
+        //   
+        //   // Update previous frame
+        //   previousFrameRef.current = currentFrameData;
+        //   
+        //   // Handle stillness detection
+        //   handleStillnessDetection(hasMotion);
+        // } else {
+        //   // Not in range, reset stillness detection
+        //   setIsStill(false);
+        //   setStillnessProgress(0);
+        //   stillnessStartTimeRef.current = 0;
+        //   previousFrameRef.current = null;
+        // }
         
         // Debug logging (disabled)
         // console.log(`Raw: ${rawDistance.toFixed(2)}m, Smoothed: ${smoothedDistance.toFixed(2)}m, In Range: ${inRange}, Background: ${selectedBackground}`);
@@ -597,6 +609,7 @@ const BackgroundRemover: React.FC<BackgroundRemoverProps> = ({
 
   const capturePhoto = useCallback(() => {
     console.log('📸 Capture photo triggered!');
+    console.log('📸 originalImageRef.current:', originalImageRef.current);
     
     if (!originalImageRef.current) {
       console.log('❌ No original image available for capture');
@@ -610,6 +623,7 @@ const BackgroundRemover: React.FC<BackgroundRemoverProps> = ({
       link.href = originalImageRef.current.toDataURL('image/png');
       
       console.log('📸 Download link created:', link.href.substring(0, 50) + '...');
+      console.log('📸 Canvas dimensions:', originalImageRef.current.width, 'x', originalImageRef.current.height);
       
       // Trigger download
       document.body.appendChild(link);
@@ -725,12 +739,15 @@ const BackgroundRemover: React.FC<BackgroundRemoverProps> = ({
           console.log('🎯 Previous background:', previousBackground);
         }
       } else if (event.key === ' ') {
-        // Space key - trigger auto capture (like standing still for 2 seconds)
+        // ===== PHÍM SPACE - AUTO CAPTURE (GIỐNG ĐỨNG YÊN 2 GIÂY) =====
+        // Chức năng: Kích hoạt auto capture giống như đứng yên 2 giây
+        // Điều kiện: Phải trong tầm 1.5m-2.0m, không đang chụp, không cooldown
+        // Kết quả: Countdown 3,2,1 → Chụp ảnh → Cooldown 3 giây
         event.preventDefault(); // Prevent page scroll
         if (isInRange && !isCapturing && !readyToCapture && !cooldownActiveRef.current) {
           console.log('🎯 Space key pressed - triggering auto capture');
-          setIsStill(true);
-          startCountdown(true); // Auto capture (like standing still)
+          setIsStill(true); // Đánh dấu đang đứng yên
+          startCountdown(true); // Bắt đầu countdown auto capture
         } else if (!isInRange) {
           console.log('🎯 Space key pressed but not in range');
         } else if (isCapturing || readyToCapture) {
